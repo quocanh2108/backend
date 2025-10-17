@@ -228,6 +228,8 @@ const recordLessonResult = async (req, res, next) => {
 		
 		const childId = req.user.role === 'child' ? req.user.id : req.body.childId;
 		
+		const processedAnswers = answers;
+		
 		if (!childId) {
 			return res.status(400).json({ success: false, message: 'Child ID is required' });
 		}
@@ -246,7 +248,7 @@ const recordLessonResult = async (req, res, next) => {
 				score,
 				timeSpent: timeSpent || 0,
 				completedAt: new Date(),
-				answers: answers || []
+				answers: processedAnswers || []
 			}, { new: true });
 		} else {
 			progress = await Progress.create({
@@ -257,7 +259,7 @@ const recordLessonResult = async (req, res, next) => {
 				score,
 				timeSpent: timeSpent || 0,
 				completedAt: new Date(),
-				answers: answers || []
+				answers: processedAnswers || []
 			});
 		}
 		

@@ -111,12 +111,15 @@ const createLesson = async (req, res, next) => {
 		
 		if (value.content && value.content.exercises) {
 			value.content.exercises.forEach(exercise => {
-				if (exercise.type === 'multiple_choice' && exercise.options && exercise.correctAnswer) {
-					if (typeof exercise.correctAnswer === 'string' && exercise.correctAnswer.length === 1) {
-						const letterIndex = exercise.correctAnswer.charCodeAt(0) - 65; 
-						if (letterIndex >= 0 && letterIndex < exercise.options.length) {
-							exercise.correctAnswer = letterIndex;
-						}
+				if (exercise.type === 'multiple_choice' && exercise.options) {
+					if (exercise.options && Array.isArray(exercise.options)) {
+						exercise.options = exercise.options.map((option, index) => {
+							if (typeof option === 'string' && option.includes(': ')) {
+								return option;
+							}
+							const letter = String.fromCharCode(65 + index);
+							return option.trim() ? `${letter}: ${option.trim()}` : '';
+						}).filter(option => option !== '');
 					}
 				}
 			});

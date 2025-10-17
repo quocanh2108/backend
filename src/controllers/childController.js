@@ -46,6 +46,56 @@ const createChild = async (req, res, next) => {
 			});
 		}
 		
+		const User = require('../models/User');
+		const existingUser = await User.findOne({ email: value.email, role: 'child' });
+		
+		if (existingUser) {
+			const existingChild = await Child.findOne({ email: value.email });
+			
+			if (existingChild) {
+				if (existingChild.parent.toString() === req.user.id) {
+					return res.status(400).json({
+						success: false,
+						message: 'Trẻ này đã được thêm vào tài khoản của bạn'
+					});
+				}
+				
+				if (existingChild.parent && existingChild.parent.toString() !== req.user.id) {
+					return res.status(400).json({
+						success: false,
+						message: 'Trẻ này đã được thêm vào tài khoản phụ huynh khác'
+					});
+				}
+			}
+			
+			const childData = {
+				_id: existingUser._id,
+				name: value.name,
+				email: value.email,
+				age: value.age,
+				gender: value.gender,
+				avatarUrl: value.avatarUrl,
+				learningLevel: value.learningLevel || 'beginner',
+				preferences: value.preferences || [],
+				parent: req.user.id,
+				createdBy: req.user.id,
+				isActive: true
+			};
+			
+			let child;
+			if (existingChild) {
+				child = await Child.findByIdAndUpdate(existingChild._id, childData, { new: true });
+			} else {
+				child = await Child.create(childData);
+			}
+			
+			return res.status(200).json({
+				success: true,
+				message: 'Đã gắn trẻ hiện có vào tài khoản của bạn',
+				data: child
+			});
+		}
+		
 		const child = await Child.create({
 			name: value.name,
 			email: value.email,
@@ -58,7 +108,12 @@ const createChild = async (req, res, next) => {
 			createdBy: req.user.id,
 			isActive: true
 		});
-		res.status(201).json({ success: true, data: child });
+		
+		res.status(201).json({ 
+			success: true, 
+			message: 'Đã tạo trẻ mới thành công',
+			data: child 
+		});
 	} catch (e) {
 		next(e);
 	}
@@ -129,9 +184,12 @@ const getChildById = async (req, res, next) => {
 const getChildStats = async (req, res, next) => {
 	try {
 		const child = await Child.findOne({ _id: req.params.id, parent: req.user.id });
-		if (!child) return res.status(404).json({ success: false, message: 'Không tìm thấy' });
+		if (!child) {
+			return res.status(404).json({ success: false, message: 'Không tìm thấy' });
+		}
 
 		const Progress = require('../models/Progress');
+		
 		const stats = await Progress.aggregate([
 			{ $match: { child: child._id } },
 			{
@@ -145,7 +203,9 @@ const getChildStats = async (req, res, next) => {
 			}
 		]);
 
-		res.json({ success: true, data: stats[0] || { totalLessons: 0, completedLessons: 0, averageScore: 0, totalTimeSpent: 0 } });
+		const result = stats[0] || { totalLessons: 0, completedLessons: 0, averageScore: 0, totalTimeSpent: 0 };
+
+		res.json({ success: true, data: result });
 	} catch (e) {
 		next(e);
 	}
@@ -157,7 +217,9 @@ const getChildActivities = async (req, res, next) => {
 		const { page = 1, limit = 20, type, startDate, endDate } = req.query;
 		
 		const child = await Child.findOne({ _id: childId, parent: req.user.id });
-		if (!child) return res.status(404).json({ success: false, message: 'Child not found' });
+		if (!child) {
+			return res.status(404).json({ success: false, message: 'Child not found' });
+		}
 
 		const filter = { child: child._id };
 		if (type) filter.type = type;
@@ -170,18 +232,20 @@ const getChildActivities = async (req, res, next) => {
 
 		const Progress = require('../models/Progress');
 		const activities = await Progress.find(filter)
-			.populate('lesson', 'title category level')
+			.populate('lesson', 'title category level content')
 			.populate('game', 'title type category')
 			.sort({ createdAt: -1 })
 			.limit(parseInt(limit))
 			.skip((parseInt(page) - 1) * parseInt(limit));
+
+		const processedActivities = activities;
 
 		const total = await Progress.countDocuments(filter);
 
 		res.json({
 			success: true,
 			data: {
-				activities,
+				activities: processedActivities,
 				pagination: {
 					total,
 					page: parseInt(page),
@@ -345,6 +409,7 @@ const getInvitations = async (req, res, next) => {
 		next(e);
 	}
 };
+
 
 module.exports = {
 	listChildren,
