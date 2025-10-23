@@ -43,6 +43,53 @@ const getLessonById = async (req, res, next) => {
 	}
 };
 
+const getRandomExercises = async (req, res, next) => {
+	try {
+		const { id: lessonId } = req.params;
+		const { count = 5 } = req.query;
+		console.log('Getting random exercises for lessonId:', lessonId);
+		
+		const lesson = await Lesson.findById(lessonId);
+		if (!lesson) {
+			console.log('Lesson not found for ID:', lessonId);
+			return res.status(404).json({ success: false, message: 'Không tìm thấy bài học' });
+		}
+		
+		console.log('Lesson found:', lesson.title);
+		console.log('Lesson content:', JSON.stringify(lesson.content, null, 2));
+		
+		const exercises = lesson.content.exercises || [];
+		console.log('Exercises count:', exercises.length);
+		
+		if (exercises.length === 0) {
+			return res.status(400).json({ success: false, message: 'Bài học không có câu hỏi' });
+		}
+		
+		const randomExercises = [];
+		const availableExercises = [...exercises];
+		const maxCount = Math.min(parseInt(count), availableExercises.length);
+		
+		for (let i = 0; i < maxCount; i++) {
+			const randomIndex = Math.floor(Math.random() * availableExercises.length);
+			randomExercises.push(availableExercises[randomIndex]);
+			availableExercises.splice(randomIndex, 1);
+		}
+		
+		res.json({ 
+			success: true, 
+			data: {
+				lessonId: lesson._id,
+				lessonTitle: lesson.title,
+				exercises: randomExercises,
+				totalExercises: exercises.length,
+				selectedCount: randomExercises.length
+			}
+		});
+	} catch (e) {
+		next(e);
+	}
+};
+
 const completeLesson = async (req, res, next) => {
 	try {
 		const schema = Joi.object({ childId: Joi.string().required() });
@@ -384,12 +431,13 @@ const getLessonHistory = async (req, res, next) => {
 	}
 };
 
-module.exports = { 
-	listLessons, 
-	getLessonById, 
-	completeLesson, 
-	createLesson, 
-	updateLesson, 
+module.exports = {
+	listLessons,
+	getLessonById,
+	getRandomExercises,
+	completeLesson,
+	createLesson,
+	updateLesson,
 	deleteLesson,
 	getLessonsByCategory,
 	getRecommendedLessons,
