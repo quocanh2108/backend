@@ -286,7 +286,7 @@ const uploadGuessImage = async (req, res, next) => {
 		next(e);
 	}
 };
-
+// câp nhật kết quả gmae 
 const playGame = async (req, res, next) => {
 	try {
 		const schema = Joi.object({

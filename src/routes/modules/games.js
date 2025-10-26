@@ -1,3 +1,5 @@
+// Cái này là xử lý ở backen như lấy danh ách game ,
+//muốn xem logic thế nào thì click và controller 
 const express = require('express');
 const { authenticate, authorize } = require('../../middleware/auth');
 const { 
@@ -18,13 +20,18 @@ const {
 } = require('../../controllers/gameController');
 const router = express.Router();
 router.use(authenticate);
+//loaays danh sách game 
 router.get('/', listGames);
+//lâys game nào cụ thể 
 router.get('/:id', getGameById);
+//sau đó hiển thị game đó lên giao diện để trẻ em chơi
+//kết quả gọi route này để lưu
 router.post('/:id/play', authorize(['parent', 'child', 'admin']), playGame);
-router.post('/', authorize(['admin']), createGame);
-router.put('/:id', authorize(['admin']), updateGame);
-router.delete('/:id', authorize(['admin']), deleteGame);
-router.post('/upload/puzzle', authorize(['admin']), upload.single('image'), uploadPuzzleImage);
+// cái này của admin
+router.post('/', authorize(['admin']), createGame);//tạo game 
+router.put('/:id', authorize(['admin']), updateGame);//sửa game 
+router.delete('/:id', authorize(['admin']), deleteGame);//xóa game 
+router.post('/upload/puzzle', authorize(['admin']), upload.single('image'), uploadPuzzleImage);//upload ảnh game// có máy game bỏ rồi
 router.post('/upload/guess', authorize(['admin']), upload.single('image'), uploadGuessImage);
 router.post('/create/coloring', authorize(['admin']), upload.single('outlineImage'), createColoringGame);
 router.post('/create/puzzle', authorize(['admin']), upload.single('originalImage'), createPuzzleGame);

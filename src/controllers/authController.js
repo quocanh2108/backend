@@ -33,7 +33,7 @@ const register = async (req, res, next) => {
 		next(err);
 	}
 };
-
+// Controller xử lý logic đăng nhập
 const login = async (req, res, next) => {
 	try {
 		const schema = Joi.object({ email: Joi.string().email().required(), password: Joi.string().required() });

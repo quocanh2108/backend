@@ -4,6 +4,7 @@ const { authenticate } = require('../../middleware/auth');
 const router = express.Router();
 
 router.post('/register', register);
+//gọi route này ở backend xử lý
 router.post('/login', login);
 router.post('/forgot-password', forgotPassword);
 router.post('/reset-password', resetPassword);
