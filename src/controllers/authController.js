@@ -28,7 +28,21 @@ const register = async (req, res, next) => {
 		const user = await User.create(value);
 		const token = signToken(user);
 		const refreshToken = signRefreshToken(user);
-		res.status(201).json({ success: true, data: { token, refreshToken, user: { id: user._id, name: user.name, email: user.email, role: user.role } } });
+		const trialStatus = user.getTrialStatus();
+		res.status(201).json({ 
+			success: true, 
+			data: { 
+				token, 
+				refreshToken, 
+				user: { 
+					id: user._id, 
+					name: user.name, 
+					email: user.email, 
+					role: user.role,
+					trialStatus: trialStatus
+				} 
+			} 
+		});
 	} catch (err) {
 		next(err);
 	}
@@ -44,11 +58,24 @@ const login = async (req, res, next) => {
 		const ok = await user.comparePassword(password);
 		if (!ok) return res.status(400).json({ success: false, message: 'Sai thông tin đăng nhập' });
 		
+		if (user.role !== 'admin' && user.isTrialAccount && !user.isActivated) {
+			const trialStatus = user.getTrialStatus();
+			if (!trialStatus.isValid) {
+				return res.status(403).json({ 
+					success: false, 
+					message: 'Tài khoản dùng thử đã hết hạn. Vui lòng liên hệ admin để kích hoạt tài khoản.',
+					trialStatus: trialStatus
+				});
+			}
+		}
+		
 		user.lastLogin = new Date();
 		await user.save();
 		
 		const token = signToken(user);
 		const refreshToken = signRefreshToken(user);
+		const trialStatus = user.getTrialStatus();
+		
 		res.json({ 
 			success: true, 
 			data: { 
@@ -60,7 +87,8 @@ const login = async (req, res, next) => {
 					email: user.email, 
 					role: user.role,
 					profile: user.profile,
-					settings: user.settings
+					settings: user.settings,
+					trialStatus: trialStatus
 				} 
 			} 
 		});
@@ -161,7 +189,11 @@ const changePassword = async (req, res, next) => {
 const getProfile = async (req, res, next) => {
 	try {
 		const user = await User.findById(req.user.id);
-		res.json({ success: true, data: { user } });
+		const trialStatus = user.getTrialStatus();
+		const userData = user.toObject();
+		userData.trialStatus = trialStatus;
+		userData.id = userData._id;
+		res.json({ success: true, data: { user: userData } });
 	} catch (err) {
 		next(err);
 	}
