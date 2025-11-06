@@ -13,6 +13,7 @@ const {
 	createColoringGame,
 	createPuzzleGame,
 	createMatchingGame,
+	createGuessingGame,
 	saveGameResult,
 	getGameHistory
 } = require('../../controllers/gameController');
@@ -29,6 +30,7 @@ router.post('/upload/guess', authorize(['admin']), upload.single('image'), uploa
 router.post('/create/coloring', authorize(['admin']), upload.single('outlineImage'), createColoringGame);
 router.post('/create/puzzle', authorize(['admin']), upload.single('originalImage'), createPuzzleGame);
 router.post('/create/matching', authorize(['admin']), createMatchingGame);
+router.post('/create/guessing', authorize(['admin']), upload.array('media', 20), createGuessingGame);
 router.post('/result', authorize(['parent', 'child', 'admin']), saveGameResult);
 router.get('/child/:childId/history', authorize(['parent', 'child', 'admin']), getGameHistory);
 

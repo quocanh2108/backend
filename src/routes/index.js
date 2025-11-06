@@ -10,5 +10,6 @@ router.use('/progress', require('./modules/progress'));
 router.use('/reports', require('./modules/reports'));
 router.use('/notifications', require('./modules/notifications'));
 router.use('/admin', require('./modules/admin'));
+router.use('/app-sessions', require('./modules/appSessions'));
 
 module.exports = router;

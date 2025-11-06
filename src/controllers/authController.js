@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const User = require('../models/User');
+const OTP = require('../models/OTP');
+const { sendOTPEmail } = require('../services/emailService');
 
 function signToken(user) {
 	return jwt.sign({ id: user._id, role: user.role, name: user.name }, process.env.JWT_SECRET || 'secret', {
@@ -21,6 +23,10 @@ const register = async (req, res, next) => {
 			email: Joi.string().email().required(),
 			password: Joi.string().min(6).required(),
 			role: Joi.string().valid('parent', 'child', 'admin')
+		}).messages({
+			'string.email': 'Vui lòng nhập đúng định dạng email',
+			'any.required': 'Vui lòng nhập {#label}',
+			'string.min': 'Mật khẩu phải có ít nhất 6 ký tự'
 		});
 		const value = await schema.validateAsync(req.body);
 		const exists = await User.findOne({ email: value.email });
@@ -44,13 +50,25 @@ const register = async (req, res, next) => {
 			} 
 		});
 	} catch (err) {
+		if (err.isJoi) {
+			return res.status(400).json({
+				success: false,
+				message: err.details[0].message
+			});
+		}
 		next(err);
 	}
 };
 
 const login = async (req, res, next) => {
 	try {
-		const schema = Joi.object({ email: Joi.string().email().required(), password: Joi.string().required() });
+		const schema = Joi.object({ 
+			email: Joi.string().email().required(), 
+			password: Joi.string().required()
+		}).messages({
+			'string.email': 'Vui lòng nhập đúng định dạng email',
+			'any.required': 'Vui lòng nhập {#label}'
+		});
 		const { email, password } = await schema.validateAsync(req.body);
 		const user = await User.findOne({ email }).select('+password');
 		if (!user) return res.status(400).json({ success: false, message: 'Sai thông tin đăng nhập' });
@@ -93,6 +111,12 @@ const login = async (req, res, next) => {
 			} 
 		});
 	} catch (err) {
+		if (err.isJoi) {
+			return res.status(400).json({
+				success: false,
+				message: err.details[0].message
+			});
+		}
 		next(err);
 	}
 };
@@ -103,26 +127,250 @@ const logout = async (req, res) => {
 
 const forgotPassword = async (req, res, next) => {
 	try {
-		const schema = Joi.object({ email: Joi.string().email().required() });
+		const schema = Joi.object({ 
+			email: Joi.string().email().required()
+		}).messages({
+			'string.email': 'Vui lòng nhập đúng định dạng email',
+			'any.required': 'Vui lòng nhập email'
+		});
 		const { email } = await schema.validateAsync(req.body);
+		
 		const user = await User.findOne({ email });
-		if (!user) return res.status(200).json({ success: true, message: 'Nếu email tồn tại, liên kết đặt lại đã được gửi' });
-		res.json({ success: true, message: 'Liên kết đặt lại mật khẩu (mô phỏng)' });
+		if (!user) {
+			return res.status(400).json({ 
+				success: false, 
+				message: 'Email không tồn tại trong hệ thống' 
+			});
+		}
+
+		const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+		const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+		
+		try {
+			await OTP.deleteMany({ email });
+			
+			await OTP.create({
+				email,
+				otp: otpCode,
+				attempts: 0,
+				expiresAt
+			});
+		} catch (dbError) {
+			return res.status(500).json({ 
+				success: false, 
+				message: 'Lỗi hệ thống. Vui lòng thử lại sau.' 
+			});
+		}
+
+		try {
+			const emailSent = await sendOTPEmail(email, otpCode);
+			
+			if (!emailSent) {
+				await OTP.deleteMany({ email });
+				return res.status(500).json({ 
+					success: false, 
+					message: 'Không thể gửi email. Vui lòng thử lại sau.' 
+				});
+			}
+		} catch (emailError) {
+			await OTP.deleteMany({ email });
+			if (emailError.message && emailError.message.includes('EMAIL_USER and EMAIL_PASSWORD')) {
+				return res.status(500).json({ 
+					success: false, 
+					message: 'Lỗi rồi! Kiểm tra cáu hình email!' 
+				});
+			}
+			return res.status(500).json({ 
+				success: false, 
+				message: 'Không thể gửi email. Vui lòng kiểm tra cấu hình email.' 
+			});
+		}
+
+		res.json({ 
+			success: true, 
+			message: 'Mã xác nhận đã được gửi đến email của bạn' 
+		});
 	} catch (err) {
+		if (err.isJoi || err.name === 'ValidationError') {
+			const message = err.details && err.details[0] ? err.details[0].message : err.message;
+			return res.status(400).json({
+				success: false,
+				message: message
+			});
+		}
+		next(err);
+	}
+};
+
+const verifyOTP = async (req, res, next) => {
+	try {
+		const schema = Joi.object({ 
+			email: Joi.string().email().required(), 
+			otp: Joi.string().length(6).required()
+		}).messages({
+			'string.email': 'Vui lòng nhập đúng định dạng email',
+			'any.required': 'Vui lòng nhập {#label}',
+			'string.length': 'Mã OTP phải có 6 số'
+		});
+		const { email, otp } = await schema.validateAsync(req.body);
+		
+		const otpRecord = await OTP.findOne({ email }).sort({ createdAt: -1 });
+		
+		if (!otpRecord) {
+			return res.status(400).json({ 
+				success: false, 
+				message: 'Mã OTP không hợp lệ hoặc đã hết hạn. Vui lòng yêu cầu mã mới.' 
+			});
+		}
+
+		if (otpRecord.lockedUntil && new Date() < otpRecord.lockedUntil) {
+			const remainingSeconds = Math.ceil((otpRecord.lockedUntil - new Date()) / 1000);
+			return res.status(400).json({ 
+				success: false, 
+				message: `Bạn đã nhập sai quá nhiều lần. Vui lòng đợi ${remainingSeconds} giây trước khi thử lại.`,
+				lockedUntil: otpRecord.lockedUntil
+			});
+		}
+
+		if (new Date() > otpRecord.expiresAt) {
+			return res.status(400).json({ 
+				success: false, 
+				message: 'Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới.' 
+			});
+		}
+
+		if (otpRecord.otp !== otp) {
+			const newAttempts = otpRecord.attempts + 1;
+			
+			if (newAttempts >= 3) {
+				const lockedUntil = new Date(Date.now() + 60 * 1000);
+				await OTP.findByIdAndUpdate(otpRecord._id, { 
+					attempts: newAttempts,
+					lockedUntil
+				});
+				
+				return res.status(400).json({ 
+					success: false, 
+					message: 'Bạn đã nhập sai mã OTP 3 lần. Vui lòng đợi 60 giây trước khi thử lại.',
+					lockedUntil
+				});
+			}
+
+			await OTP.findByIdAndUpdate(otpRecord._id, { attempts: newAttempts });
+			
+			return res.status(400).json({ 
+				success: false, 
+				message: `Mã OTP không đúng. Bạn còn ${3 - newAttempts} lần thử.`,
+				remainingAttempts: 3 - newAttempts
+			});
+		}
+
+		res.json({ 
+			success: true, 
+			message: 'Mã OTP hợp lệ' 
+		});
+	} catch (err) {
+		if (err.isJoi || err.name === 'ValidationError') {
+			const message = err.details && err.details[0] ? err.details[0].message : err.message;
+			return res.status(400).json({
+				success: false,
+				message: message
+			});
+		}
 		next(err);
 	}
 };
 
 const resetPassword = async (req, res, next) => {
 	try {
-		const schema = Joi.object({ email: Joi.string().email().required(), newPassword: Joi.string().min(6).required() });
-		const { email, newPassword } = await schema.validateAsync(req.body);
+		const schema = Joi.object({ 
+			email: Joi.string().email().required(), 
+			otp: Joi.string().length(6).required(),
+			newPassword: Joi.string().min(6).required()
+		}).messages({
+			'string.email': 'Vui lòng nhập đúng định dạng email',
+			'any.required': 'Vui lòng nhập {#label}',
+			'string.length': 'Mã OTP phải có 6 số',
+			'string.min': 'Mật khẩu phải có ít nhất 6 ký tự'
+		});
+		const { email, otp, newPassword } = await schema.validateAsync(req.body);
+		
+		const otpRecord = await OTP.findOne({ email }).sort({ createdAt: -1 });
+		
+		if (!otpRecord) {
+			return res.status(400).json({ 
+				success: false, 
+				message: 'Mã OTP không hợp lệ hoặc đã hết hạn. Vui lòng yêu cầu mã mới.' 
+			});
+		}
+
+		if (otpRecord.lockedUntil && new Date() < otpRecord.lockedUntil) {
+			const remainingSeconds = Math.ceil((otpRecord.lockedUntil - new Date()) / 1000);
+			return res.status(400).json({ 
+				success: false, 
+				message: `Bạn đã nhập sai quá nhiều lần. Vui lòng đợi ${remainingSeconds} giây trước khi thử lại.`,
+				lockedUntil: otpRecord.lockedUntil
+			});
+		}
+
+		if (new Date() > otpRecord.expiresAt) {
+			return res.status(400).json({ 
+				success: false, 
+				message: 'Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới.' 
+			});
+		}
+
+		if (otpRecord.otp !== otp) {
+			const newAttempts = otpRecord.attempts + 1;
+			
+			if (newAttempts >= 3) {
+				const lockedUntil = new Date(Date.now() + 60 * 1000);
+				await OTP.findByIdAndUpdate(otpRecord._id, { 
+					attempts: newAttempts,
+					lockedUntil
+				});
+				
+				return res.status(400).json({ 
+					success: false, 
+					message: 'Bạn đã nhập sai mã OTP 3 lần. Vui lòng đợi 60 giây trước khi thử lại.',
+					lockedUntil
+				});
+			}
+
+			await OTP.findByIdAndUpdate(otpRecord._id, { attempts: newAttempts });
+			
+			return res.status(400).json({ 
+				success: false, 
+				message: `Mã OTP không đúng. Bạn còn ${3 - newAttempts} lần thử.`,
+				remainingAttempts: 3 - newAttempts
+			});
+		}
+
 		const user = await User.findOne({ email }).select('+password');
-		if (!user) return res.status(400).json({ success: false, message: 'Tài khoản không tồn tại' });
+		if (!user) {
+			return res.status(400).json({ 
+				success: false, 
+				message: 'Tài khoản không tồn tại' 
+			});
+		}
+
 		user.password = newPassword;
 		await user.save();
-		res.json({ success: true, message: 'Đặt lại mật khẩu thành công' });
+
+		await OTP.deleteMany({ email });
+
+		res.json({ 
+			success: true, 
+			message: 'Đặt lại mật khẩu thành công' 
+		});
 	} catch (err) {
+		if (err.isJoi || err.name === 'ValidationError') {
+			const message = err.details && err.details[0] ? err.details[0].message : err.message;
+			return res.status(400).json({
+				success: false,
+				message: message
+			});
+		}
 		next(err);
 	}
 };
@@ -203,7 +451,8 @@ module.exports = {
 	register, 
 	login, 
 	logout, 
-	forgotPassword, 
+	forgotPassword,
+	verifyOTP,
 	resetPassword, 
 	refresh, 
 	updateProfile, 

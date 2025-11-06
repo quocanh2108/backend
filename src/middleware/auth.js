@@ -3,7 +3,9 @@ const jwt = require('jsonwebtoken');
 function authenticate(req, res, next) {
 	const header = req.headers.authorization || '';
 	const token = header.startsWith('Bearer ') ? header.substring(7) : null;
-	if (!token) return res.status(401).json({ success: false, message: 'Unauthorized' });
+	if (!token) {
+		return res.status(401).json({ success: false, message: 'Unauthorized' });
+	}
 	try {
 		const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret');
 		req.user = payload;

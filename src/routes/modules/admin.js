@@ -20,7 +20,6 @@ router.get('/users', getUsers);
 router.get('/children', getChildren);
 router.get('/reports', getReports);
 
-// Trial account management routes
 router.get('/trial-accounts', getTrialAccounts);
 router.get('/trial-stats', getTrialStats);
 router.post('/trial-accounts/:userId/activate', activateTrialAccount);

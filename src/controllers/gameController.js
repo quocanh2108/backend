@@ -22,12 +22,14 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
 	storage: storage,
-	limits: { fileSize: 10 * 1024 * 1024 },
+	limits: { fileSize: 50 * 1024 * 1024 },
 	fileFilter: (req, file, cb) => {
-		if (file.mimetype.startsWith('image/')) {
+		if (file.mimetype.startsWith('image/') || 
+		    file.mimetype.startsWith('video/') ||
+		    file.mimetype === 'image/gif') {
 			cb(null, true);
 		} else {
-			cb(new Error('Only image files are allowed'), false);
+			cb(new Error('Only image, video, and gif files are allowed'), false);
 		}
 	}
 });
@@ -79,7 +81,7 @@ const createGame = async (req, res, next) => {
 		
 		const schema = Joi.object({
 			key: Joi.string().required(),
-			type: Joi.string().valid('coloring', 'puzzle', 'matching').required(),
+			type: Joi.string().valid('coloring', 'puzzle', 'matching', 'guessing').required(),
 			title: Joi.string().required(),
 			description: Joi.string().optional(),
 			category: Joi.string().valid('letter', 'number', 'color', 'action').required(),
@@ -112,6 +114,8 @@ const createGame = async (req, res, next) => {
 				questions: Joi.array().items(Joi.object({
 					id: Joi.string().optional(),
 					imageUrl: Joi.string().optional(),
+					mediaUrl: Joi.string().optional(),
+					mediaType: Joi.string().valid('image', 'video', 'gif').optional(),
 					question: Joi.string().optional(),
 					options: Joi.array().items(Joi.string()).optional(),
 					correctAnswer: Joi.string().optional(),
@@ -155,7 +159,6 @@ const createGame = async (req, res, next) => {
 		
 		res.status(201).json({ success: true, data: game });
 	} catch (e) {
-		console.error('Error creating game:', e);
 		next(e);
 	}
 };
@@ -352,7 +355,6 @@ const createColoringGame = async (req, res, next) => {
 			try {
 				req.body.suggestedColors = JSON.parse(req.body.suggestedColors);
 			} catch (e) {
-				console.error('Error parsing suggestedColors:', e);
 			}
 		}
 		
@@ -386,7 +388,6 @@ const createColoringGame = async (req, res, next) => {
 
 		res.status(201).json({ success: true, data: game });
 	} catch (e) {
-		console.error('Error creating coloring game:', e);
 		next(e);
 	}
 };
@@ -433,7 +434,6 @@ const createPuzzleGame = async (req, res, next) => {
 
 		res.status(201).json({ success: true, data: game });
 	} catch (e) {
-		console.error('Error creating puzzle game:', e);
 		next(e);
 	}
 };
@@ -485,64 +485,183 @@ const createMatchingGame = async (req, res, next) => {
 
 		res.status(201).json({ success: true, data: game });
 	} catch (e) {
-		console.error('Error creating matching game:', e);
+		next(e);
+	}
+};
+
+const createGuessingGame = async (req, res, next) => {
+	try {
+		let questionsData = [];
+		if (req.body.questions) {
+			try {
+				questionsData = typeof req.body.questions === 'string' 
+					? JSON.parse(req.body.questions) 
+					: req.body.questions;
+				
+				questionsData = questionsData.map(q => ({
+					...q,
+					explanation: q.explanation && q.explanation.trim() ? q.explanation : undefined
+				}));
+			} catch (e) {
+				return res.status(400).json({ 
+					success: false, 
+					message: 'Invalid questions format: ' + e.message 
+				});
+			}
+		}
+
+		const schema = Joi.object({
+			title: Joi.string().required(),
+			description: Joi.string().optional().allow('', null),
+			category: Joi.string().valid('letter', 'number', 'color', 'action').required(),
+			level: Joi.string().valid('beginner', 'intermediate', 'advanced').optional(),
+			questions: Joi.array().items(Joi.object({
+				options: Joi.array().items(Joi.string().min(1)).length(4).required(),
+				correctAnswer: Joi.string().min(1).required(),
+				explanation: Joi.string().optional().allow('', null)
+			})).min(1).required(),
+			estimatedTime: Joi.number().optional()
+		});
+
+		const bodyData = { ...req.body };
+		if (bodyData.estimatedTime) {
+			bodyData.estimatedTime = parseFloat(bodyData.estimatedTime);
+		}
+
+		const gameData = await schema.validateAsync({
+			...bodyData,
+			questions: questionsData
+		});
+		
+		if (!req.files || req.files.length === 0) {
+			return res.status(400).json({ success: false, message: 'Ít nhất một file media (image/video/gif) là bắt buộc' });
+		}
+
+		if (req.files.length !== gameData.questions.length) {
+			return res.status(400).json({ 
+				success: false, 
+				message: `Số lượng file (${req.files.length}) phải khớp với số lượng câu hỏi (${gameData.questions.length})` 
+			});
+		}
+
+		const key = `guessing_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+		
+		const processedQuestions = await Promise.all(
+			gameData.questions.map(async (question, index) => {
+				const file = req.files[index];
+				let mediaType = 'image';
+				
+				if (file.mimetype.startsWith('video/')) {
+					mediaType = 'video';
+				} else if (file.mimetype === 'image/gif') {
+					mediaType = 'gif';
+				}
+				
+				return {
+					id: `question_${index}`,
+					mediaUrl: file.filename,
+					mediaType: mediaType,
+					imageUrl: mediaType === 'image' ? file.filename : null,
+					options: question.options,
+					correctAnswer: question.correctAnswer,
+					explanation: question.explanation || ''
+				};
+			})
+		);
+		
+		const game = await Game.create({
+			key,
+			type: 'guessing',
+			title: gameData.title,
+			description: gameData.description,
+			category: gameData.category,
+			level: gameData.level || 'beginner',
+			imageUrl: processedQuestions[0]?.mediaUrl || null,
+			estimatedTime: gameData.estimatedTime || 10,
+			data: {
+				questions: processedQuestions
+			}
+		});
+
+		res.status(201).json({ success: true, data: game });
+	} catch (e) {
 		next(e);
 	}
 };
 
 const saveGameResult = async (req, res, next) => {
 	try {
+		const { resultData, ...bodyWithoutResultData } = req.body;
+		
 		const schema = Joi.object({
 			gameId: Joi.string().required(),
 			userId: Joi.string().required(),
 			score: Joi.number().min(0).max(100).required(),
 			timeSpent: Joi.number().min(0).required(),
-			gameType: Joi.string().valid('coloring', 'puzzle', 'matching').required(),
-			resultData: Joi.object({
-				coloredImage: Joi.string().optional(),
-				colorsUsed: Joi.array().items(Joi.string()).optional(),
-				drawingData: Joi.string().optional(),
-				totalPoints: Joi.number().optional(),
-				brushSizes: Joi.array().items(Joi.number()).optional(),
-				completionTime: Joi.number().optional(),
-				isCompleted: Joi.boolean().optional(),
-				difficulty: Joi.string().optional(),
-				piecesPlaced: Joi.number().optional(),
-				hintsUsed: Joi.number().optional(),
-				finalScore: Joi.number().optional(),
-				correctPairs: Joi.number().optional(),
-				totalPairs: Joi.number().optional()
-			}).optional()
+			gameType: Joi.string().valid('coloring', 'puzzle', 'matching', 'guessing').required()
 		});
 
-		const resultData = await schema.validateAsync(req.body);
+		const validatedData = await schema.validateAsync(bodyWithoutResultData, { allowUnknown: true, stripUnknown: false });
+		
+		const resultData_final = {
+			...validatedData,
+			resultData: resultData
+		};
 		
 		const Progress = require('../models/Progress');
 		const Game = require('../models/Game');
 		
 		
-		const game = await Game.findById(resultData.gameId);
+		const game = await Game.findById(resultData_final.gameId);
 		if (!game) {
 			return res.status(404).json({
 				success: false,
 				message: 'Không tìm thấy trò chơi'
 			});
 		}
+
+		const rawAnswers = resultData_final.resultData?.answers || [];
 		
+		const normalizedAnswers = rawAnswers.map((answer, index) => {
+			let exerciseId = answer.exerciseId || answer.questionId || answer.id;
+			
+			if (!exerciseId || exerciseId.trim() === '') {
+				exerciseId = `question_${index}`;
+			}
+			
+			exerciseId = String(exerciseId).trim() || `question_${index}`;
+			
+			const normalized = {
+				exerciseId: exerciseId,
+				answer: String(answer.answer || '').trim(),
+				isCorrect: Boolean(answer.isCorrect)
+			};
+			
+			return normalized;
+		});
+		
+		const invalidAnswers = normalizedAnswers.filter(a => !a.exerciseId || a.exerciseId.trim() === '');
+		if (invalidAnswers.length > 0) {
+			return res.status(400).json({
+				success: false,
+				message: 'Một số câu trả lời không hợp lệ: thiếu exerciseId'
+			});
+		}
+
 		const progressData = {
-			child: resultData.userId,
-			game: resultData.gameId,
-			score: resultData.score,
-			timeSpent: resultData.timeSpent,
+			child: resultData_final.userId,
+			game: resultData_final.gameId,
+			score: resultData_final.score,
+			timeSpent: resultData_final.timeSpent,
 			status: 'completed',
 			type: 'game',
 			completedAt: new Date(),
-			answers: resultData.resultData?.answers || []
+			answers: normalizedAnswers
 		};
 		
 		const existingProgress = await Progress.findOne({
-			child: resultData.userId,
-			game: resultData.gameId,
+			child: resultData_final.userId,
+			game: resultData_final.gameId,
 			type: 'game'
 		});
 		
@@ -563,13 +682,12 @@ const saveGameResult = async (req, res, next) => {
 			success: true,
 			data: {
 				message: 'Kết quả đã được lưu thành công!',
-				score: resultData.score,
+				score: resultData_final.score,
 				achievements: [],
 				progressId: progress._id
 			}
 		});
 	} catch (e) {
-		console.error('Error saving game result:', e);
 		next(e);
 	}
 };
@@ -626,7 +744,6 @@ const getGameHistory = async (req, res, next) => {
 		
 		res.json(responseData);
 	} catch (e) {
-		console.error('Error getting game history:', e);
 		next(e);
 	}
 };
@@ -644,6 +761,7 @@ module.exports = {
 	createColoringGame,
 	createPuzzleGame,
 	createMatchingGame,
+	createGuessingGame,
 	saveGameResult,
 	getGameHistory
 };
