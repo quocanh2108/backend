@@ -1,4 +1,4 @@
-// Cái này là xử lý ở backen như lấy danh ách game ,
+// là xử lý ở backen như lấy danh ách game ,
 //muốn xem logic thế nào thì click và controller 
 const express = require('express');
 const { authenticate, authorize } = require('../../middleware/auth');
@@ -27,7 +27,7 @@ router.get('/:id', getGameById);
 //sau đó hiển thị game đó lên giao diện để trẻ em chơi
 //kết quả gọi route này để lưu
 router.post('/:id/play', authorize(['parent', 'child', 'admin']), playGame);
-// cái này của admin
+// admin
 router.post('/', authorize(['admin']), createGame);//tạo game 
 router.put('/:id', authorize(['admin']), updateGame);//sửa game 
 router.delete('/:id', authorize(['admin']), deleteGame);//xóa game 
