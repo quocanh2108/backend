@@ -16,26 +16,29 @@ const startSession = async (req, res, next) => {
 			return res.status(404).json({ success: false, message: 'Child not found' });
 		}
 
-		const activeSession = await AppSession.findOne({ 
-			child: childId, 
-			status: 'active' 
+	const activeSession = await AppSession.findOne({ 
+		child: childId, 
+		status: 'active' 
+	});
+
+	if (activeSession) {
+		activeSession.startTime = new Date();
+		await activeSession.save();
+		
+		return res.json({ 
+			success: true, 
+			data: activeSession,
+			message: 'Session updated with new start time'
 		});
+	}
 
-		if (activeSession) {
-			return res.json({ 
-				success: true, 
-				data: activeSession,
-				message: 'Session already active'
-			});
-		}
+	const session = new AppSession({
+		child: childId,
+		startTime: new Date(),
+		status: 'active'
+	});
 
-		const session = new AppSession({
-			child: childId,
-			startTime: new Date(),
-			status: 'active'
-		});
-
-		await session.save();
+	await session.save();
 
 		res.json({
 			success: true,
