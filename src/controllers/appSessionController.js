@@ -177,7 +177,11 @@ const getLastActivityTime = async (req, res, next) => {
 	try {
 		const { childId } = req.params;
 		
-		const child = await Child.findOne({ _id: childId, parent: req.user.id });
+		const childQuery = req.user.role === 'admin' 
+			? { _id: childId }
+			: { _id: childId, parent: req.user.id };
+		
+		const child = await Child.findOne(childQuery);
 		if (!child) {
 			return res.status(404).json({ success: false, message: 'Child not found' });
 		}

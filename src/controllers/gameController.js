@@ -38,7 +38,13 @@ const listGames = async (req, res, next) => {
 	try {
 		const { page = 1, limit = 20, type, category, level } = req.query;
 		const filter = { isActive: true };
-		if (type) filter.type = type;
+		if (type) {
+			if (type === 'guess_action') {
+				filter.type = { $in: ['guess_action', 'guessing'] };
+			} else {
+				filter.type = type;
+			}
+		}
 		if (category) filter.category = category;
 		if (level) filter.level = level;
 
@@ -81,10 +87,10 @@ const createGame = async (req, res, next) => {
 		
 		const schema = Joi.object({
 			key: Joi.string().required(),
-			type: Joi.string().valid('coloring', 'puzzle', 'matching', 'guessing').required(),
+			type: Joi.string().valid('coloring', 'puzzle', 'matching', 'guessing', 'guess_action').required(),
 			title: Joi.string().required(),
 			description: Joi.string().optional(),
-			category: Joi.string().valid('letter', 'number', 'color', 'action').required(),
+			category: Joi.string().valid('letter', 'number', 'color', 'action').optional(),
 			level: Joi.string().valid('beginner', 'intermediate', 'advanced').optional(),
 			data: Joi.object({
 				instructions: Joi.string().optional(),
@@ -221,8 +227,29 @@ const uploadPuzzleImage = async (req, res, next) => {
 
 		const image = sharp(imagePath);
 		const metadata = await image.metadata();
+		
+		if (!metadata.width || !metadata.height) {
+			return res.status(400).json({ success: false, message: 'Cannot read image dimensions' });
+		}
+		
 		const pieceWidth = Math.floor(metadata.width / cols);
 		const pieceHeight = Math.floor(metadata.height / rows);
+		
+		// Validate piece dimensions
+		if (pieceWidth <= 0 || pieceHeight <= 0) {
+			return res.status(400).json({ 
+				success: false, 
+				message: `Image too small for ${rows}x${cols} puzzle. Minimum size: ${cols * 100}x${rows * 100} pixels` 
+			});
+		}
+		
+		// Ensure extract area doesn't exceed image bounds
+		if (pieceWidth * cols > metadata.width || pieceHeight * rows > metadata.height) {
+			return res.status(400).json({ 
+				success: false, 
+				message: 'Puzzle dimensions exceed image size' 
+			});
+		}
 
 		for (let row = 0; row < rows; row++) {
 			for (let col = 0; col < cols; col++) {
@@ -234,24 +261,38 @@ const uploadPuzzleImage = async (req, res, next) => {
 					fs.mkdirSync(piecesDir, { recursive: true });
 				}
 
-				await image
-					.extract({
-						left: col * pieceWidth,
-						top: row * pieceHeight,
-						width: pieceWidth,
-						height: pieceHeight
-					})
-					.jpeg()
-					.toFile(piecePath);
-
-				pieces.push({
-					id: pieceId,
-					imageUrl: piecePath,
-					correctPosition: {
-						x: col * pieceWidth,
-						y: row * pieceHeight
+				try {
+					const left = col * pieceWidth;
+					const top = row * pieceHeight;
+					
+					// Validate extract area bounds
+					if (left + pieceWidth > metadata.width || top + pieceHeight > metadata.height) {
+						throw new Error(`Extract area exceeds image bounds: left=${left}, top=${top}, width=${pieceWidth}, height=${pieceHeight}, image=${metadata.width}x${metadata.height}`);
 					}
-				});
+
+					await image
+						.clone()
+						.extract({
+							left: left,
+							top: top,
+							width: pieceWidth,
+							height: pieceHeight
+						})
+						.jpeg()
+						.toFile(piecePath);
+
+					pieces.push({
+						id: pieceId,
+						imageUrl: piecePath,
+						correctPosition: {
+							x: left,
+							y: top
+						}
+					});
+				} catch (extractError) {
+					console.error(`Error extracting piece ${pieceId}:`, extractError);
+					throw new Error(`Failed to extract puzzle piece ${pieceId}: ${extractError.message}`);
+				}
 			}
 		}
 
@@ -345,7 +386,7 @@ const createColoringGame = async (req, res, next) => {
 		const schema = Joi.object({
 			title: Joi.string().required(),
 			description: Joi.string().optional(),
-			category: Joi.string().valid('letter', 'number', 'color', 'action').required(),
+			category: Joi.string().valid('letter', 'number', 'color', 'action').optional(),
 			level: Joi.string().valid('beginner', 'intermediate', 'advanced').optional(),
 			suggestedColors: Joi.array().items(Joi.string().pattern(/^#[0-9A-F]{6}$/i)).optional(),
 			estimatedTime: Joi.number().optional()
@@ -368,12 +409,11 @@ const createColoringGame = async (req, res, next) => {
 		
 		const imageUrl = req.file.filename;
 		
-		const game = await Game.create({
+		const gameDataToCreate = {
 			key,
 			type: 'coloring',
 			title: gameData.title,
 			description: gameData.description,
-			category: gameData.category,
 			level: gameData.level || 'beginner',
 			imageUrl: imageUrl,
 			estimatedTime: gameData.estimatedTime || 10,
@@ -384,7 +424,13 @@ const createColoringGame = async (req, res, next) => {
 					colorAreas: []
 				}
 			}
-		});
+		};
+		
+		if (gameData.category) {
+			gameDataToCreate.category = gameData.category;
+		}
+		
+		const game = await Game.create(gameDataToCreate);
 
 		res.status(201).json({ success: true, data: game });
 	} catch (e) {
@@ -398,7 +444,7 @@ const createPuzzleGame = async (req, res, next) => {
 		const schema = Joi.object({
 			title: Joi.string().required(),
 			description: Joi.string().optional(),
-			category: Joi.string().valid('letter', 'number', 'color', 'action').required(),
+			category: Joi.string().valid('letter', 'number', 'color', 'action').optional(),
 			level: Joi.string().valid('beginner', 'intermediate', 'advanced').optional(),
 			rows: Joi.number().min(2).max(5).required(),
 			cols: Joi.number().min(2).max(5).required(),
@@ -415,12 +461,11 @@ const createPuzzleGame = async (req, res, next) => {
 		
 		const imageUrl = req.file.filename;
 		
-		const game = await Game.create({
+		const gameDataToCreate = {
 			key,
 			type: 'puzzle',
 			title: gameData.title,
 			description: gameData.description,
-			category: gameData.category,
 			level: gameData.level || 'beginner',
 			imageUrl: imageUrl,
 			estimatedTime: gameData.estimatedTime || 15,
@@ -430,7 +475,13 @@ const createPuzzleGame = async (req, res, next) => {
 				cols: gameData.cols,
 				puzzlePieces: []
 			}
-		});
+		};
+		
+		if (gameData.category) {
+			gameDataToCreate.category = gameData.category;
+		}
+		
+		const game = await Game.create(gameDataToCreate);
 
 		res.status(201).json({ success: true, data: game });
 	} catch (e) {
@@ -444,7 +495,7 @@ const createMatchingGame = async (req, res, next) => {
 		const schema = Joi.object({
 			title: Joi.string().required(),
 			description: Joi.string().optional(),
-			category: Joi.string().valid('letter', 'number', 'color', 'action').required(),
+			category: Joi.string().valid('letter', 'number', 'color', 'action').optional(),
 			level: Joi.string().valid('beginner', 'intermediate', 'advanced').optional(),
 			pairs: Joi.array().items(Joi.object({
 				text: Joi.string().required(),
@@ -469,19 +520,24 @@ const createMatchingGame = async (req, res, next) => {
 			})
 		);
 		
-		const game = await Game.create({
+		const gameDataToCreate = {
 			key,
 			type: 'matching',
 			title: gameData.title,
 			description: gameData.description,
-			category: gameData.category,
 			level: gameData.level || 'beginner',
 			imageUrl: processedPairs[0]?.imageUrl || null,
 			estimatedTime: gameData.estimatedTime || 10,
 			data: {
 				matchingPairs: processedPairs
 			}
-		});
+		};
+		
+		if (gameData.category) {
+			gameDataToCreate.category = gameData.category;
+		}
+		
+		const game = await Game.create(gameDataToCreate);
 
 		res.status(201).json({ success: true, data: game });
 	} catch (e) {
@@ -513,7 +569,7 @@ const createGuessingGame = async (req, res, next) => {
 		const schema = Joi.object({
 			title: Joi.string().required(),
 			description: Joi.string().optional().allow('', null),
-			category: Joi.string().valid('letter', 'number', 'color', 'action').required(),
+			category: Joi.string().valid('letter', 'number', 'color', 'action').optional(),
 			level: Joi.string().valid('beginner', 'intermediate', 'advanced').optional(),
 			questions: Joi.array().items(Joi.object({
 				options: Joi.array().items(Joi.string().min(1)).length(4).required(),
@@ -569,19 +625,24 @@ const createGuessingGame = async (req, res, next) => {
 			})
 		);
 		
-		const game = await Game.create({
+		const gameDataToCreate = {
 			key,
 			type: 'guessing',
 			title: gameData.title,
 			description: gameData.description,
-			category: gameData.category,
 			level: gameData.level || 'beginner',
 			imageUrl: processedQuestions[0]?.mediaUrl || null,
 			estimatedTime: gameData.estimatedTime || 10,
 			data: {
 				questions: processedQuestions
 			}
-		});
+		};
+		
+		if (gameData.category) {
+			gameDataToCreate.category = gameData.category;
+		}
+		
+		const game = await Game.create(gameDataToCreate);
 
 		res.status(201).json({ success: true, data: game });
 	} catch (e) {

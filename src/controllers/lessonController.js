@@ -125,14 +125,11 @@ const createLesson = async (req, res, next) => {
 	try {
 		
 		const schema = Joi.object({
-			category: Joi.string().valid('letter', 'number', 'color', 'action').required(),
 			title: Joi.string().required(),
 			description: Joi.string().optional(),
 			imageUrl: Joi.string().optional(), 
 			audioUrl: Joi.string().optional(), 
-			text: Joi.string().optional(),
 			content: Joi.object({
-				text: Joi.string().optional(),
 				examples: Joi.array().items(Joi.string()).optional(),
 				exercises: Joi.array().items(Joi.object({
 					id: Joi.string().optional(),
@@ -149,7 +146,6 @@ const createLesson = async (req, res, next) => {
 					})).optional()
 				})).optional()
 			}).optional(),
-			level: Joi.string().valid('beginner', 'intermediate', 'advanced').optional(),
 			order: Joi.number().optional(),
 			estimatedTime: Joi.number().optional(), 
 			prerequisites: Joi.array().items(Joi.string()).optional()
@@ -184,12 +180,9 @@ const createLesson = async (req, res, next) => {
 const updateLesson = async (req, res, next) => {
 	try {
 	const schema = Joi.object({ 
-		category: Joi.string().valid('letter', 'number', 'color', 'action'), 
 		title: Joi.string(), 
 		description: Joi.string().optional(),
 		imageUrl: Joi.string().optional(), 
-		text: Joi.string().optional(),
-		level: Joi.string().valid('beginner', 'intermediate', 'advanced').optional(),
 		estimatedTime: Joi.number().optional(),
 		content: Joi.any(), 
 		order: Joi.number() 

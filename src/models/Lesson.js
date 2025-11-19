@@ -2,13 +2,12 @@ const mongoose = require('mongoose');
 
 const LessonSchema = new mongoose.Schema(
 	{
-		category: { type: String, enum: ['letter', 'number', 'color', 'action'], required: true },
+		category: { type: String, enum: ['letter', 'number', 'color', 'action'] },
 		title: { type: String, required: true },
 		description: String,
 		imageUrl: String,
 		audioUrl: String,
 		content: {
-			text: String,
 			examples: [String],
 			exercises: [{
 				_id: { type: String, default: () => new mongoose.Types.ObjectId().toString() },
@@ -27,8 +26,7 @@ const LessonSchema = new mongoose.Schema(
 		},
 		level: { 
 			type: String, 
-			enum: ['beginner', 'intermediate', 'advanced'], 
-			default: 'beginner' 
+			enum: ['beginner', 'intermediate', 'advanced']
 		},
 		order: Number,
 		estimatedTime: { type: Number, default: 10 }, 

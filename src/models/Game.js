@@ -3,10 +3,10 @@ const mongoose = require('mongoose');
 const GameSchema = new mongoose.Schema(
 	{
 		key: { type: String, required: true, unique: true },
-		type: { type: String, enum: ['coloring', 'puzzle', 'matching', 'guessing'], required: true },
+		type: { type: String, enum: ['coloring', 'puzzle', 'matching', 'guessing', 'guess_action'], required: true },
 		title: { type: String, required: true },
 		description: String,
-		category: { type: String, enum: ['letter', 'number', 'color', 'action'], required: true },
+		category: { type: String, enum: ['letter', 'number', 'color', 'action'] },
 		level: { 
 			type: String, 
 			enum: ['beginner', 'intermediate', 'advanced'], 
