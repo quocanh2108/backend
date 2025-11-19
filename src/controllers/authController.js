@@ -124,7 +124,7 @@ const login = async (req, res, next) => {
 const logout = async (req, res) => {
 	res.json({ success: true, message: 'Đã đăng xuất' });
 };
-
+// kiểm tra định dạng email và email có tồn tại trong CSDL không, nếu có tạo OTP gửi thông qua mail service
 const forgotPassword = async (req, res, next) => {
 	try {
 		const schema = Joi.object({ 
@@ -163,7 +163,7 @@ const forgotPassword = async (req, res, next) => {
 		}
 
 		try {
-			const emailSent = await sendOTPEmail(email, otpCode);
+			const emailSent = await sendOTPEmail(email, otpCode);// service gửi OTP trong mail service
 			
 			if (!emailSent) {
 				await OTP.deleteMany({ email });
