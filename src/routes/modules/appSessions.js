@@ -20,8 +20,8 @@ const canManageSession = (req, res, next) => {
 	}
 	return res.status(403).json({ success: false, message: 'Unauthorized' });
 };
-
-router.post('/start', canManageSession, startSession);
+// tuong ưng day la cac route ơ bacnend ma frontend goi toi - phần endpoint route 
+router.post('/start', canManageSession, startSession);// Canmangesession (middleware chỉ ai có quyen child moi duoc vao)
 router.post('/end', canManageSession, endSession);
 
 router.get('/child/:childId', authorize(['parent', 'admin']), getChildSessions);

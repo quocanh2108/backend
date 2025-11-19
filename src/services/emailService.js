@@ -25,7 +25,7 @@ const getTransporter = () => {
 	}
 	return transporter;
 };
-
+// nó ở đây
 const sendOTPEmail = async (email, otp) => {
 	try {
 		const mailTransporter = getTransporter();

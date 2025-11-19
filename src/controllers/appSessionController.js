@@ -89,7 +89,7 @@ const endSession = async (req, res, next) => {
 		next(e);
 	}
 };
-
+// 2 cai trrn la luu vao dattabase ccollet session
 const getChildSessions = async (req, res, next) => {
 	try {
 		const { childId } = req.params;
@@ -123,7 +123,7 @@ const getChildSessions = async (req, res, next) => {
 		next(e);
 	}
 };
-
+// nói chung là các hàm tương ưng trong router này, gồm lưu thời gian đăng hập đăng xuất,lấy ra ở phụ huynh -phần logic
 const getTotalUsageTime = async (req, res, next) => {
 	try {
 		const { childId } = req.params;
